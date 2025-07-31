@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polar Heart Rate Data Collector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-6xl mx-auto p-4 md:p-6 lg:p-8">
+        <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+            
+            <!-- Header -->
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-6 border-b border-gray-200">
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold text-gray-900">Polar Data Collector</h1>
+                    <p class="text-gray-500 mt-1">H10 ECG, Accelerometer, and HR/RR Data Collection</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <!-- Storage Indicator -->
+                    <div id="storage-indicator" class="hidden bg-gray-100 rounded-full px-3 py-1 text-sm">
+                        <span class="font-medium">Storage: </span>
+                        <span id="storage-percent">0%</span>
+                    </div>
+                    <!-- Connection Status -->
+                    <div id="status-container" class="flex items-center bg-gray-100 rounded-full px-4 py-2 text-sm font-medium">
+                        <span id="status-dot" class="status-dot disconnected mr-3"></span>
+                        <span id="status-text">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Left Column: Controls & Metadata -->
+                <div class="lg:col-span-1 flex flex-col gap-6">
+                    <!-- Participant Info -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <h2 class="font-bold text-lg mb-3 text-gray-800">Participant Info</h2>
+                        <label for="participant-id" class="block text-sm font-medium text-gray-600 mb-1">Participant ID</label>
+                        <input type="text" id="participant-id" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., P001">
+                    </div>
+
+                    <!-- Data Stream Selection -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <h2 class="font-bold text-lg mb-3 text-gray-800">Data Streams</h2>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="checkbox" id="stream-hr" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" checked>
+                                <span class="ml-2 text-sm text-gray-700">Heart Rate (HR/RR)</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="stream-ecg" class="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500">
+                                <span class="ml-2 text-sm text-gray-700">ECG</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="stream-acc" class="h-4 w-4 text-green-600 border-gray-300 rounded focus:ring-green-500">
+                                <span class="ml-2 text-sm text-gray-700">Accelerometer (ACC)</span>
+                            </label>
+                        </div>
+                        <!-- Sample Rate Selectors -->
+                        <div id="sample-rate-controls" class="mt-4 space-y-2 hidden">
+                            <div id="ecg-rate-control" class="hidden">
+                                <label class="block text-xs font-medium text-gray-600 mb-1">ECG Sample Rate</label>
+                                <select id="ecg-sample-rate" class="w-full px-2 py-1 text-sm bg-white border border-gray-300 rounded">
+                                    <option value="130">130 Hz</option>
+                                    <option value="125">125 Hz</option>
+                                    <option value="200">200 Hz</option>
+                                    <option value="250">250 Hz</option>
+                                    <option value="500">500 Hz</option>
+                                </select>
+                            </div>
+                            <div id="acc-rate-control" class="hidden">
+                                <label class="block text-xs font-medium text-gray-600 mb-1">ACC Sample Rate</label>
+                                <select id="acc-sample-rate" class="w-full px-2 py-1 text-sm bg-white border border-gray-300 rounded">
+                                    <option value="25">25 Hz</option>
+                                    <option value="50">50 Hz</option>
+                                    <option value="100">100 Hz</option>
+                                    <option value="200">200 Hz</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Connection & Recording -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <h2 class="font-bold text-lg mb-3 text-gray-800">Controls</h2>
+                        <div class="flex flex-col gap-3">
+                            <button id="btn-connect" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:bg-gray-400">Connect to Polar Device</button>
+                            <button id="btn-disconnect" class="w-full bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600 transition-colors shadow-sm hidden">Disconnect Device</button>
+                            <button id="btn-record" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm disabled:bg-gray-400" disabled>
+                                <span id="record-text">Start Recording</span>
+                                <span id="record-timer" class="hidden ml-2"></span>
+                            </button>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500">
+                            <kbd>Ctrl+S</kbd> Start/Stop • <kbd>Ctrl+E</kbd> Export
+                        </div>
+                    </div>
+                    
+                    <!-- Data Management -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <h2 class="font-bold text-lg mb-3 text-gray-800">Data Management</h2>
+                        <div class="flex flex-col gap-3">
+                            <button id="btn-export-csv" class="w-full bg-gray-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-800 transition-colors shadow-sm disabled:bg-gray-400" disabled>Export as CSV</button>
+                            <button id="btn-export-json" class="w-full bg-gray-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-800 transition-colors shadow-sm disabled:bg-gray-400" disabled>Export as JSON</button>
+                            <button id="btn-clear" class="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition-colors shadow-sm disabled:bg-gray-400" disabled>Clear Stored Data</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Live Data & Events -->
+                <div class="lg:col-span-2 flex flex-col gap-6">
+                    <!-- Data Quality Indicator -->
+                    <div id="data-quality" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                            <span class="text-sm font-medium text-yellow-800">Data Quality: <span id="quality-status">Good</span></span>
+                        </div>
+                        <p class="text-xs text-yellow-700 mt-1">Gaps detected: <span id="gap-count">0</span></p>
+                    </div>
+
+                    <!-- Live Data Display -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <h2 class="font-bold text-lg mb-3 text-gray-800">Live Data</h2>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center mb-4">
+                            <div class="bg-white p-4 rounded-lg shadow-sm relative">
+                                <div class="data-indicator" id="hr-indicator"></div>
+                                <p class="text-sm font-medium text-gray-500">Heart Rate</p>
+                                <p id="hr-value" class="text-4xl font-bold text-blue-600 mt-1">--</p>
+                                <p class="text-xs text-gray-400">BPM</p>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg shadow-sm relative">
+                                <div class="data-indicator" id="rr-indicator"></div>
+                                <p class="text-sm font-medium text-gray-500">RR Intervals</p>
+                                <p id="rr-value" class="text-4xl font-bold text-green-600 mt-1">--</p>
+                                <p class="text-xs text-gray-400">ms</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
+                            <div class="bg-white p-4 rounded-lg shadow-sm relative">
+                                <div class="data-indicator" id="ecg-indicator"></div>
+                                <p class="text-sm font-medium text-gray-500">ECG</p>
+                                <p id="ecg-value" class="text-4xl font-bold text-purple-600 mt-1">--</p>
+                                <p class="text-xs text-gray-400">µV</p>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg shadow-sm relative">
+                                <div class="data-indicator" id="acc-indicator"></div>
+                                <p class="text-sm font-medium text-gray-500">Accelerometer (X, Y, Z)</p>
+                                <p id="acc-value" class="text-lg md:text-xl font-bold text-indigo-600 mt-1 leading-tight">--<br>--<br>--</p>
+                                <p class="text-xs text-gray-400">mG</p>
+                            </div>
+                        </div>
+                        <!-- Recording Stats -->
+                        <div id="recording-stats" class="hidden mt-4 p-3 bg-blue-50 rounded-lg">
+                            <h3 class="text-sm font-semibold text-blue-900 mb-2">Recording Statistics</h3>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                <div>
+                                    <span class="text-blue-700">HR:</span>
+                                    <span id="hr-count" class="font-mono">0</span>
+                                </div>
+                                <div>
+                                    <span class="text-blue-700">RR:</span>
+                                    <span id="rr-count" class="font-mono">0</span>
+                                </div>
+                                <div>
+                                    <span class="text-blue-700">ECG:</span>
+                                    <span id="ecg-count" class="font-mono">0</span>
+                                </div>
+                                <div>
+                                    <span class="text-blue-700">ACC:</span>
+                                    <span id="acc-count" class="font-mono">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Event Logging -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <h2 class="font-bold text-lg mb-3 text-gray-800">Event Logging</h2>
+                        <div class="flex flex-col sm:flex-row gap-2 mb-3">
+                            <input type="text" id="event-label-input" class="flex-grow px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter event label (e.g., Task Start)">
+                            <button id="btn-add-event" class="bg-purple-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors shadow-sm disabled:bg-gray-400" disabled>Label Event</button>
+                        </div>
+                        <div id="event-log" class="h-48 bg-white rounded-md border border-gray-200 p-3 overflow-y-auto text-sm">
+                            <p class="text-gray-400">Events will be logged here...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for messages -->
+    <div id="modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center">
+            <h3 id="modal-title" class="text-xl font-bold mb-4">Message</h3>
+            <p id="modal-message" class="text-gray-600 mb-6"></p>
+            <div id="modal-buttons" class="flex justify-center gap-4">
+                <!-- Buttons will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
