@@ -105,11 +105,13 @@ document.addEventListener('DOMContentLoaded', () => {
             await checkForExistingData();
         } catch (error) {
             console.error('Failed to initialize database:', error);
-            showModal('Database Error', 'Failed to initialize local storage. Some features may not work correctly.');
+            db = null; // Ensure db is explicitly set to null on failure
+            showModal('Database Error', 'Failed to initialize local storage. Recording will still work but data will not be saved permanently.');
         }
     }
 
     async function checkStorageQuota() {
+        if (!db) return; // Skip if database is not available
         if ('storage' in navigator && 'estimate' in navigator.storage) {
             try {
                 const { usage, quota } = await navigator.storage.estimate();
@@ -131,6 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkForExistingData() {
+        if (!db) return; // Skip if database is not available
         const sessions = await getAllSessions();
         if (sessions.length > 0) {
             elements.exportCsvButton.disabled = false;
@@ -631,6 +634,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Warn if database is not available
+        if (!db) {
+            console.warn('Database not available for recording. Data will not be saved to IndexedDB.');
+            showModal('Database Warning', 
+                'Database is not available. Data will not be saved permanently but recording can continue.');
+        }
+
         isRecording = true;
         recordingStartTime = new Date();
         
@@ -710,8 +720,16 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Update session with end time and ensure all data is saved
             if (currentSession) {
-                // Get the latest session from DB to include all flushed data
-                const latestSession = await db.get(STORE_NAME, currentSession.id) || currentSession;
+                // Get the latest session from DB to include all flushed data (if DB is available)
+                let latestSession = currentSession;
+                if (db) {
+                    try {
+                        latestSession = await db.get(STORE_NAME, currentSession.id) || currentSession;
+                    } catch (error) {
+                        console.warn('Failed to get latest session from DB, using current session:', error);
+                        latestSession = currentSession;
+                    }
+                }
                 
                 // Add any remaining buffered data
                 Object.keys(sessionBuffer).forEach(key => {
@@ -724,7 +742,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 latestSession.endTime = endTime.toISOString();
                 latestSession.duration = endTime - new Date(latestSession.startTime);
                 
-                await saveSession(latestSession);
+                // Save session if database is available
+                if (db) {
+                    await saveSession(latestSession);
+                } else {
+                    console.warn('Database not available, session data not saved to IndexedDB');
+                }
             }
             
             // Update UI
