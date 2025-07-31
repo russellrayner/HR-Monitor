@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkStorageQuota() {
-        if (!db) return; // Skip if database is not available
+        if (!db || typeof db.transaction !== 'function') return; // Skip if database is not available
         if ('storage' in navigator && 'estimate' in navigator.storage) {
             try {
                 const { usage, quota } = await navigator.storage.estimate();
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkForExistingData() {
-        if (!db) return; // Skip if database is not available
+        if (!db || typeof db.getAll !== 'function') return; // Skip if database is not available
         const sessions = await getAllSessions();
         if (sessions.length > 0) {
             elements.exportCsvButton.disabled = false;
@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function saveSession(session) {
-        if (!db) return;
+        if (!db || typeof db.put !== 'function') return;
         try {
             await db.put(STORE_NAME, session);
         } catch (error) {
@@ -164,10 +164,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function flushBufferToDatabase() {
-        if (!currentSession || !db) return;
+        if (!currentSession || !db || typeof db.get !== 'function') return;
         
         try {
-            const existingSession = await db.get(STORE_NAME, currentSession.id) || currentSession;
+            // Double-check db is still valid before using it
+            if (!db || typeof db.get !== 'function') {
+                console.warn('Database became unavailable during flush operation');
+                return;
+            }
+            
+            let existingSession = currentSession;
+            try {
+                existingSession = await db.get(STORE_NAME, currentSession.id) || currentSession;
+            } catch (dbError) {
+                console.warn('Failed to get existing session from database:', dbError);
+                existingSession = currentSession;
+            }
             
             // Merge buffered data with existing data
             let hasNewData = false;
@@ -205,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function getAllSessions() {
-        if (!db) return [];
+        if (!db || typeof db.getAll !== 'function') return [];
         try {
             return await db.getAll(STORE_NAME);
         } catch (error) {
@@ -215,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function clearAllData() {
-        if (!db) return;
+        if (!db || typeof db.transaction !== 'function') return;
         try {
             const tx = db.transaction(STORE_NAME, 'readwrite');
             await tx.store.clear();
@@ -635,7 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Warn if database is not available
-        if (!db) {
+        if (!db || typeof db.put !== 'function') {
             console.warn('Database not available for recording. Data will not be saved to IndexedDB.');
             showModal('Database Warning', 
                 'Database is not available. Data will not be saved permanently but recording can continue.');
@@ -722,7 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentSession) {
                 // Get the latest session from DB to include all flushed data (if DB is available)
                 let latestSession = currentSession;
-                if (db) {
+                if (db && typeof db.get === 'function') {
                     try {
                         latestSession = await db.get(STORE_NAME, currentSession.id) || currentSession;
                     } catch (error) {
@@ -743,7 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 latestSession.duration = endTime - new Date(latestSession.startTime);
                 
                 // Save session if database is available
-                if (db) {
+                if (db && typeof db.put === 'function') {
                     await saveSession(latestSession);
                 } else {
                     console.warn('Database not available, session data not saved to IndexedDB');
