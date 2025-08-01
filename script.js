@@ -867,7 +867,22 @@ document.addEventListener('DOMContentLoaded', () => {
         startRecordingTimer();
         updateRecordingStats();
         
+        // Clear event log and add resume message
         elements.eventLog.innerHTML = `<p class="text-blue-600 font-medium">Resumed recording for ${session.participantId}</p>`;
+        
+        // Restore existing events if any
+        if (session.events && session.events.length > 0) {
+            session.events.forEach(eventData => {
+                // Add ID if not present (for backward compatibility)
+                if (!eventData.id) {
+                    eventData.id = eventData.timestamp;
+                }
+                const eventTime = new Date(eventData.timestamp).toLocaleTimeString();
+                const eventEntry = createEventElement(eventData, eventTime, eventData.label);
+                elements.eventLog.appendChild(eventEntry);
+            });
+            elements.eventLog.scrollTop = elements.eventLog.scrollHeight;
+        }
     }
 
     // --- Event Management ---
@@ -876,18 +891,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isRecording || !currentSession) return;
         
         const timestamp = getTimestamp();
-        const eventData = { timestamp, label };
+        const eventId = Date.now() + Math.random(); // Unique ID for this event
+        const eventData = { timestamp, label, id: eventId };
         
         // Add to buffer
         sessionBuffer.events.push(eventData);
         
         // Update UI
-        const eventEntry = document.createElement('div');
-        eventEntry.className = 'event-entry';
-        eventEntry.innerHTML = `
-            <span class="font-semibold text-purple-600">${new Date().toLocaleTimeString()}</span>
-            <span class="text-gray-700 ml-2">${label}</span>
-        `;
+        const eventEntry = createEventElement(eventData, new Date().toLocaleTimeString(), label);
         elements.eventLog.appendChild(eventEntry);
         elements.eventLog.scrollTop = elements.eventLog.scrollHeight;
         
@@ -900,6 +911,137 @@ document.addEventListener('DOMContentLoaded', () => {
             flushBufferToDatabase();
         }
     }
+
+    function createEventElement(eventData, timeString, label) {
+        const eventEntry = document.createElement('div');
+        eventEntry.className = 'event-entry group flex items-center justify-between p-2 rounded hover:bg-gray-50 transition-colors';
+        eventEntry.setAttribute('data-event-id', eventData.id || eventData.timestamp); // Use ID or fallback to timestamp
+        
+        eventEntry.innerHTML = `
+            <div class="flex-grow">
+                <span class="font-semibold text-purple-600">${timeString}</span>
+                <span class="event-label text-gray-700 ml-2">${label}</span>
+            </div>
+            <div class="event-actions flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button class="edit-event-btn text-gray-400 hover:text-blue-600 p-1 rounded" title="Edit event">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                    </svg>
+                </button>
+                <button class="delete-event-btn text-gray-400 hover:text-red-600 p-1 rounded" title="Delete event">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                </button>
+            </div>
+        `;
+        
+        return eventEntry;
+    }
+
+    function editEvent(eventData, eventEntry) {
+        const eventLabel = eventEntry.querySelector('.event-label');
+        const eventActions = eventEntry.querySelector('.event-actions');
+        const currentLabel = eventLabel.textContent;
+        
+        // Store the timestamp text before replacing content
+        const timestampElement = eventEntry.querySelector('.font-semibold');
+        const timestampText = timestampElement.textContent;
+        
+        // Create editing interface
+        const editingDiv = document.createElement('div');
+        editingDiv.className = 'flex items-center gap-2 flex-grow';
+        editingDiv.innerHTML = `
+            <input type="text" class="edit-input flex-grow px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" value="${currentLabel}">
+            <button class="save-event-btn text-green-600 hover:text-green-700 p-1 rounded" title="Save changes">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </button>
+            <button class="cancel-event-btn text-gray-600 hover:text-gray-700 p-1 rounded" title="Cancel editing">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        `;
+        
+        // Replace the content
+        const originalContent = eventEntry.querySelector('div:first-child');
+        eventEntry.replaceChild(editingDiv, originalContent);
+        eventActions.style.display = 'none';
+        
+        // Focus the input
+        const editInput = editingDiv.querySelector('.edit-input');
+        editInput.focus();
+        editInput.select();
+        
+        // Save function
+        const saveEdit = () => {
+            const newLabel = editInput.value.trim();
+            if (newLabel && newLabel !== currentLabel) {
+                // Update the data
+                eventData.label = newLabel;
+                
+                // Update the UI
+                const newContent = document.createElement('div');
+                newContent.className = 'flex-grow';
+                newContent.innerHTML = `
+                    <span class="font-semibold text-purple-600">${timestampText}</span>
+                    <span class="event-label text-gray-700 ml-2">${newLabel}</span>
+                `;
+                eventEntry.replaceChild(newContent, editingDiv);
+                eventActions.style.display = '';
+            } else {
+                cancelEdit();
+            }
+        };
+        
+        // Cancel function
+        const cancelEdit = () => {
+            const newContent = document.createElement('div');
+            newContent.className = 'flex-grow';
+            newContent.innerHTML = `
+                <span class="font-semibold text-purple-600">${timestampText}</span>
+                <span class="event-label text-gray-700 ml-2">${currentLabel}</span>
+            `;
+            eventEntry.replaceChild(newContent, editingDiv);
+            eventActions.style.display = '';
+        };
+        
+        // Event listeners
+        editingDiv.querySelector('.save-event-btn').addEventListener('click', saveEdit);
+        editingDiv.querySelector('.cancel-event-btn').addEventListener('click', cancelEdit);
+        editInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                saveEdit();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelEdit();
+            }
+        });
+    }
+
+    function deleteEvent(eventData, eventEntry) {
+        const eventLabel = eventData.label;
+        const eventTime = new Date(eventData.timestamp).toLocaleTimeString();
+        
+        showModal('Delete Event', 
+            `Are you sure you want to delete this event?\n\nTime: ${eventTime}\nLabel: "${eventLabel}"\n\nThis action cannot be undone.`,
+            true, 
+            () => {
+                // Remove from data array
+                const eventIndex = sessionBuffer.events.findIndex(e => e.id === eventData.id || e.timestamp === eventData.timestamp);
+                if (eventIndex !== -1) {
+                    sessionBuffer.events.splice(eventIndex, 1);
+                }
+                
+                // Remove from UI
+                eventEntry.remove();
+            }
+        );
+    }
+
 
     // --- Export Functions ---
     async function exportToCSV() {
@@ -1161,6 +1303,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // Stream checkbox listeners
     [elements.streamHrCheckbox, elements.streamEcgCheckbox, elements.streamAccCheckbox].forEach(checkbox => {
         checkbox.addEventListener('change', updateSampleRateControls);
+    });
+
+    // Event log delegation for edit/delete buttons
+    elements.eventLog.addEventListener('click', (e) => {
+        const eventEntry = e.target.closest('.event-entry');
+        if (!eventEntry) return;
+        
+        const eventId = eventEntry.getAttribute('data-event-id');
+        if (!eventId) return;
+        
+        // Find the event data by ID or timestamp
+        const eventData = sessionBuffer.events.find(event => 
+            (event.id && event.id.toString() === eventId) || 
+            event.timestamp.toString() === eventId
+        );
+        
+        if (!eventData) return;
+        
+        if (e.target.closest('.edit-event-btn')) {
+            editEvent(eventData, eventEntry);
+        } else if (e.target.closest('.delete-event-btn')) {
+            deleteEvent(eventData, eventEntry);
+        }
     });
 
     // Keyboard shortcuts
