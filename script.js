@@ -7,6 +7,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const DB_NAME = 'polar-data-collector';
     const STORE_NAME = 'sessions';
     
+    // A simple helper function to create a delay
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    
     // Bluetooth UUIDs
     const HR_SERVICE_UUID = '0000180d-0000-1000-8000-00805f9b34fb';
     const HR_CHARACTERISTIC_UUID = '00002a37-0000-1000-8000-00805f9b34fb';
@@ -322,6 +325,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 pmdData.addEventListener('characteristicvaluechanged', handlePMDMeasurement);
                 await pmdData.startNotifications();
+
+                // 100ms pause to assist with timing
+                await sleep(100); 
                 
                 // Start ECG stream
                 if (elements.streamEcgCheckbox.checked) {
