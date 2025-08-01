@@ -21,6 +21,12 @@
                     <p class="text-gray-500 mt-1">H10 ECG, Accelerometer, and HR/RR Data Collection</p>
                 </div>
                 <div class="flex items-center gap-4">
+                    <!-- Battery Indicator -->
+                    <div id="battery-indicator" class="hidden bg-gray-100 rounded-full px-3 py-1 text-sm">
+                        <span class="font-medium">Battery: </span>
+                        <span id="battery-percent">--</span>
+                        <span id="battery-icon" class="ml-1">🔋</span>
+                    </div>
                     <!-- Storage Indicator -->
                     <div id="storage-indicator" class="hidden bg-gray-100 rounded-full px-3 py-1 text-sm">
                         <span class="font-medium">Storage: </span>

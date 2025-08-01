@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const PMD_SERVICE_UUID = 'fb005c80-02e7-f387-1cad-8acd2d8df0c8';
     const PMD_CONTROL_UUID = 'fb005c81-02e7-f387-1cad-8acd2d8df0c8';
     const PMD_DATA_UUID = 'fb005c82-02e7-f387-1cad-8acd2d8df0c8';
+    const BATTERY_SERVICE_UUID = '0000180f-0000-1000-8000-00805f9b34fb';
+    const BATTERY_LEVEL_UUID = '00002a19-0000-1000-8000-00805f9b34fb';
 
     // Sample rates
     const SAMPLE_RATES = {
@@ -55,6 +57,9 @@ document.addEventListener('DOMContentLoaded', () => {
         sampleRateControls: document.getElementById('sample-rate-controls'),
         ecgRateControl: document.getElementById('ecg-rate-control'),
         accRateControl: document.getElementById('acc-rate-control'),
+        batteryIndicator: document.getElementById('battery-indicator'),
+        batteryPercent: document.getElementById('battery-percent'),
+        batteryIcon: document.getElementById('battery-icon'),
         storageIndicator: document.getElementById('storage-indicator'),
         storagePercent: document.getElementById('storage-percent'),
         dataQuality: document.getElementById('data-quality'),
@@ -277,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             bluetoothDevice = await navigator.bluetooth.requestDevice({
                 filters: [{ namePrefix: 'Polar' }],
-                optionalServices: [HR_SERVICE_UUID, PMD_SERVICE_UUID]
+                optionalServices: [HR_SERVICE_UUID, PMD_SERVICE_UUID, BATTERY_SERVICE_UUID]
             });
 
             bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
@@ -287,6 +292,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Setup selected data streams
             await setupDataStreams();
+            
+            // Setup battery monitoring
+            await setupBatteryMonitoring();
             
             updateStatus('connected', `Connected to ${bluetoothDevice.name}`);
             onConnected();
@@ -379,6 +387,78 @@ document.addEventListener('DOMContentLoaded', () => {
         return new Uint8Array([0x02, 0x02, 0x00, 0x01, lsb, msb, 0x01, 0x01, 0x10, 0x00, 0x02, 0x01, 0x08, 0x00]);
     }
 
+    async function setupBatteryMonitoring() {
+        try {
+            updateStatus('connecting', 'Setting up battery monitoring...');
+            const batteryService = await gattServer.getPrimaryService(BATTERY_SERVICE_UUID);
+            const batteryCharacteristic = await batteryService.getCharacteristic(BATTERY_LEVEL_UUID);
+            
+            // Read initial battery level
+            const batteryLevel = await batteryCharacteristic.readValue();
+            const batteryPercent = batteryLevel.getUint8(0);
+            updateBatteryIndicator(batteryPercent);
+            
+            // Set up notifications for battery level changes (if supported)
+            try {
+                batteryCharacteristic.addEventListener('characteristicvaluechanged', handleBatteryLevelChange);
+                await batteryCharacteristic.startNotifications();
+                console.log('Battery level notifications started');
+            } catch (notificationError) {
+                console.log('Battery notifications not supported, will poll periodically');
+                // Start periodic battery level polling every 5 minutes
+                setInterval(async () => {
+                    try {
+                        const level = await batteryCharacteristic.readValue();
+                        const percent = level.getUint8(0);
+                        updateBatteryIndicator(percent);
+                    } catch (error) {
+                        console.warn('Failed to read battery level:', error);
+                    }
+                }, 300000); // 5 minutes
+            }
+            
+            console.log(`Initial battery level: ${batteryPercent}%`);
+        } catch (error) {
+            console.warn('Battery service not available:', error);
+            // Battery service is optional, don't fail the connection
+        }
+    }
+
+    function handleBatteryLevelChange(event) {
+        const batteryLevel = event.target.value.getUint8(0);
+        updateBatteryIndicator(batteryLevel);
+        console.log(`Battery level updated: ${batteryLevel}%`);
+    }
+
+    function updateBatteryIndicator(batteryPercent) {
+        elements.batteryPercent.textContent = `${batteryPercent}%`;
+        elements.batteryIndicator.classList.remove('hidden');
+        
+        // Update battery icon based on level
+        if (batteryPercent > 75) {
+            elements.batteryIcon.textContent = '🔋'; // Full battery
+            elements.batteryIndicator.className = elements.batteryIndicator.className.replace(/bg-\w+-\d+/, 'bg-green-100');
+        } else if (batteryPercent > 50) {
+            elements.batteryIcon.textContent = '🔋'; // Good battery
+            elements.batteryIndicator.className = elements.batteryIndicator.className.replace(/bg-\w+-\d+/, 'bg-green-100');
+        } else if (batteryPercent > 25) {
+            elements.batteryIcon.textContent = '🪫'; // Medium battery
+            elements.batteryIndicator.className = elements.batteryIndicator.className.replace(/bg-\w+-\d+/, 'bg-yellow-100');
+        } else if (batteryPercent > 10) {
+            elements.batteryIcon.textContent = '🪫'; // Low battery
+            elements.batteryIndicator.className = elements.batteryIndicator.className.replace(/bg-\w+-\d+/, 'bg-orange-100');
+        } else {
+            elements.batteryIcon.textContent = '🪫'; // Critical battery
+            elements.batteryIndicator.className = elements.batteryIndicator.className.replace(/bg-\w+-\d+/, 'bg-red-100');
+            
+            // Show low battery warning
+            if (batteryPercent <= 10) {
+                showModal('Low Battery Warning', 
+                    `Polar device battery is critically low (${batteryPercent}%). Please charge your device soon to avoid interruption during data collection.`);
+            }
+        }
+    }
+
     function onConnected() {
         elements.connectButton.classList.add('hidden');
         elements.disconnectButton.classList.remove('hidden');
@@ -418,6 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateStatus('connecting', 'Reconnecting...');
                 gattServer = await bluetoothDevice.gatt.connect();
                 await setupDataStreams();
+                await setupBatteryMonitoring();
                 updateStatus('connected', `Reconnected to ${bluetoothDevice.name}`);
                 onConnected();
                 showModal('Reconnected', 'Successfully reconnected to the device.');
@@ -435,6 +516,9 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.disconnectButton.classList.add('hidden');
         elements.recordButton.disabled = true;
         elements.addEventButton.disabled = true;
+        
+        // Hide battery indicator
+        elements.batteryIndicator.classList.add('hidden');
         
         // Re-enable stream selection
         [elements.streamHrCheckbox, elements.streamEcgCheckbox, elements.streamAccCheckbox].forEach(cb => {
